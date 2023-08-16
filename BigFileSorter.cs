@@ -1,19 +1,13 @@
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using System.Reactive.Linq;
-
 namespace DictCombine;
 
-public class BigFileSorter : IDisposable
+public class BigFileSorter
 {
-    private string _filePath;
+    private readonly string _inputFilePath;
     private readonly int _bufferSize;
-    private List<string> _partsPaths = new();
-    private readonly object _sync = new object();
 
     public BigFileSorter(string filePath, int bufferSize)
     {
-        (_filePath, _bufferSize) = (filePath, bufferSize);
+        (_inputFilePath, _bufferSize) = (filePath, bufferSize);
     }
 
     /// <summary>
@@ -22,49 +16,40 @@ public class BigFileSorter : IDisposable
     /// <returns>Путь к отсортированному файлу.</returns>
     public async Task<string> Sort()
     {
-        await SplitFile();
-        SortParts();
-        return await SortResult();
+        var partsPaths = await SplitFile();
+        var result = await SortAndMargeFiles(partsPaths);
+        
+        foreach (var f in partsPaths)
+            if (File.Exists(f))
+                File.Delete(f);
+        
+        return result;
     }
-
-    private async Task SplitFile()
+    
+    /// <summary>
+    /// Разбивает файл на куски, которые могут поместиться в памяти и сортирует их.
+    /// </summary>
+    /// <returns>Пути к отсортированным файлам.</returns>
+    private async Task<List<string>> SplitFile()
     {
-        using var reader = new StreamReader(_filePath);
-
-        while (!reader.EndOfStream)
+        List<string> partsPaths = new();
+        List<Task> writeTasks = new();
+        var input = File.ReadLines(_inputFilePath); 
+        
+        foreach (var i in input.Chunk(_bufferSize))
         {
-            _partsPaths.Add(TempFilesPaths.Next());
-
-            await using var writer = new StreamWriter(_partsPaths.Last());
-            for (int i = 0; i < _bufferSize; i++)
-            {
-                if (reader.EndOfStream) break;
-
-                await writer.WriteLineAsync(await reader.ReadLineAsync());
-            }
-
+            var partPath = TempFilesPaths.Next(); 
+            partsPaths.Add(partPath);
+            
+            // Сортируем во время нарезки, чтоб сэкономить на чтении/записи файлов
+            var sorted = i.OrderBy(x => x);
+            writeTasks.Add(File.WriteAllLinesAsync(partPath, sorted)); 
         }
+        
+        await Task.WhenAll(writeTasks);
+        
+        return partsPaths;
     }
-
-    private void SortParts()
-    {
-        List<string> sortedPaths = new();
-
-        sortedPaths.AddRange(_partsPaths.Select(p =>
-        {
-            var sorted = File.ReadLinesAsync(p).Where(x => x != String.Empty).OrderBy(x => x).ToEnumerable();
-            var newPath = TempFilesPaths.Next();
-            File.WriteAllLines(newPath, sorted);
-
-            File.Delete(p);
-            return newPath;
-        }));
-
-        _partsPaths = sortedPaths;
-    }
-
-    private async Task<string> SortResult()
-        => await SortAndMargeFiles(_partsPaths);
 
     /// <summary>
     /// Сортирует файлы, объединяя их в один.
@@ -78,44 +63,65 @@ public class BigFileSorter : IDisposable
 
         try
         {
-            var lines = readers.Select(async x => new LineItem((await x.ReadLineAsync())!, x)).ToList();
+            var lines = readers.Select( x => new FileSortItem(x)).ToList();
 
             await using var writer = new StreamWriter(resultPath);
 
             while (lines.Count > 0)
             {
-                var current = lines.OrderBy(x => x.Result.Line).First();
-                await writer.WriteLineAsync(current.Result.Line);
+                var current = lines.OrderBy(x => x.Line).First();
+                await writer.WriteLineAsync(current.Line);
 
-                if (current.Result.Reader.EndOfStream) lines.Remove(current);
-
-                current.Result.Line = (await current.Result.Reader.ReadLineAsync())!;
+                if (! await current.TryNextAsync()) lines.Remove(current);
             }
+
+            writer.Close();
         }
         finally
         {
             foreach (var r in readers)
-            {
                 r.Dispose();
-            }
         }
 
         return resultPath;
     }
 
-    public void Dispose()
+    private async IAsyncEnumerable<IAsyncEnumerable<string>> ChunkAsync(IAsyncEnumerable<string> input, int count)
     {
-        foreach (var f in _partsPaths)
-            if (File.Exists(f))
-                File.Delete(f);
+        await using var enumerator = input.GetAsyncEnumerator();
+        var result = new List<string>(count);
+
+        int i = 0;
+        while (await enumerator.MoveNextAsync())
+        {
+            result.Add(enumerator.Current);
+            i++;
+
+            if (i >= count)
+            {
+                i = 0;
+                yield return result.ToAsyncEnumerable();
+                result.Clear();
+            }
+        }
+
+        if (result.Count != 0) yield return result.ToAsyncEnumerable();
     }
 }
 
-file class LineItem
+file class FileSortItem
 {
-    public string Line;
-    public readonly StreamReader Reader;
+    public string? Line { get; private set; }
+    private readonly StreamReader _reader;
 
-    public LineItem(string line, StreamReader reader) =>
-        (Line, Reader) = (line, reader);
+    public FileSortItem(StreamReader reader) =>
+        (Line, _reader) = (reader.ReadLine()!, reader);
+
+    public async Task<bool> TryNextAsync()
+    {
+        if (_reader.EndOfStream) return false;
+
+        Line = await _reader.ReadLineAsync();
+        return true;
+    }
 }

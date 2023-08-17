@@ -1,3 +1,8 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+
 namespace DictCombine;
 
 public class BigFileSorter
@@ -13,24 +18,22 @@ public class BigFileSorter
     /// <summary>
     /// Сортирует строки в указаном файле.
     /// </summary>
-    /// <returns>Путь к отсортированным файлам, кол-во паролей в файле.</returns>
-    public async Task<(List<string> Path, long Count)> Sort()
+    /// <returns>Путь к отсортированному файлу, кол-во паролей в исходном файле.</returns>
+    public async Task<(string Path, long AllPassCount)> Sort()
     {
         var (partsPaths, count) = await SplitFile();
-        //var path = await SortAndMargeFiles(partsPaths);
+        var path = await SortAndMargeFiles(partsPaths);
 
-        foreach (var f in partsPaths)
-            if (File.Exists(f))
-                File.Delete(f);
+        Exterminator3000.DeleteFiles(partsPaths);
 
-        return (partsPaths, count);
+        return (path, count);
     }
 
     /// <summary>
     /// Разбивает файл на куски, которые могут поместиться в памяти и сортирует их.
     /// </summary>
-    /// <returns>Пути к отсортированным файлам, кол-во паролей в файле.</returns>
-    private async Task<(List<string> partsPaths, long Count)> SplitFile()
+    /// <returns>Пути к отсортированным частям файла, кол-во паролей в файле.</returns>
+    public async Task<(List<string> PartsPaths, long AllPassCount)> SplitFile()
     {
         List<string> partsPaths = new();
         List<Task> writeTasks = new();

@@ -48,7 +48,8 @@ public class Aggregator
     private async Task<List<(List<string> PartsPaths, long AllPassCount)>> SortAllDictionary()
     {
         var sorters = _inputFilesPaths.Select(x => new BigFileSorter(x, _bufferSize));
-        var sortTasks = sorters.Select(x => x.SplitFile()).ToList();
+        var sortTasks = sorters.AsParallel().Select(x => x.SplitFile()).ToList();
+        
         // Список путей к файлам и колчество паролей в каждом исходном файле словаря
         var sortedFiles = new List<(List<string> PartsPaths, long AllPassCount)>();
 

@@ -8,8 +8,7 @@ namespace DictCombine;
 
 static class Program
 {
-    private const int _defaultBufferSize = 150_000_000;
-    private static Dictionary<string, int> _passwords = new Dictionary<string, int>();
+    private const int _defaultBufferSize = 15_000_000;
 
     static async Task Main(string[] args)
     {
@@ -20,15 +19,19 @@ static class Program
         try
         {
             inputFilesPaths = Directory.GetFiles(args[0]);
-            bufferSize = args.Length >= 3 ? int.Parse(args[2]) : _defaultBufferSize;
             outputFilePath = args[1];
+            bufferSize = args.Length > 2 ? int.Parse(args[2]) : _defaultBufferSize;
+            var tempDirPath = args.Length > 3 ? args[3] : null;
+            if (tempDirPath is not null) TempFilesPaths.TempDirPath = tempDirPath;
         }
         catch
         {
             Console.WriteLine(
-                "arguments: [path to directory with dictionaries] [path to output file] [buffer size optional]\n" +
-                "Buffer size is the number of records stored in RAM from each file.\n" +
-                $"The more - the faster the program, but more RAM consumption. Default is {_defaultBufferSize}");
+                "arguments: [path to directory with dictionaries] [path to output file] [buffer size optional] [path to temp directory optional]\n\n" +
+                "Buffer size is the number of records stored in RAM from EACH file.\n " +
+                $"The more - the faster the program, but more RAM consumption. Default is {_defaultBufferSize}.\n " +
+                "The path to the directory with temporary files should be specified if the /tmp directory is mounted in RAM. The files necessary " +
+                "for calculations will be created in this directory and will be automatically deleted after the program ends.");
             return;
         }
 
@@ -42,7 +45,6 @@ static class Program
         foreach (var i in res.OrderBy(x => x.Value))
             Console.WriteLine($"{i.Value} | {i.Key}");
 
-        Console.ReadLine();
         Directory.Delete(TempFilesPaths.TempDirPath, recursive: true);
     }
 
@@ -50,16 +52,11 @@ static class Program
     {
         if (File.Exists(path))
         {
-            while (true)
-            {
-                Console.Write(
-                    "The output file already exists. The program will overwrite its contents.\nContinue? [y/n]:");
-                var k = Console.ReadKey();
-                Console.WriteLine();
+            Console.Write("The output file already exists. The program will overwrite its contents.\nContinue? [y/n]:");
+            var k = Console.ReadKey();
+            Console.WriteLine();
 
-                if (k.Key == ConsoleKey.Y) return true;
-                if (k.Key == ConsoleKey.N) return false;
-            }
+            return k.Key == ConsoleKey.Y ? true : false;
         }
 
         return true;

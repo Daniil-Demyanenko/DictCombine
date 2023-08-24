@@ -6,6 +6,7 @@ You may encounter an error creating files in a temporary folder, although there 
 
 ```
 Arguments: [path to directory with dictionaries] [path to output file] [buffer size optional] [path to temp directory optional]
+
 Buffer size is the number of records stored in RAM from EACH file.
 The more - the faster the program, but more RAM consumption. Default is 50000000.
 The path to the directory with temporary files should be specified if the /tmp directory is mounted in RAM. The files necessary

@@ -13,6 +13,8 @@ The path to the directory with temporary files should be specified if the /tmp d
 for calculations will be created in this directory and will be automatically deleted after the program ends.
 ```
 
+❗❗ **Use only full paths to files and directorys**
+
 ## Building for Linux
 ```
 dotnet publish -p:PublishSingleFile=true -c Release --self-contained=false -r linux-x64

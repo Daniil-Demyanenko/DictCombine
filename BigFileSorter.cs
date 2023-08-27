@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using static System.Console;
 
 namespace DictCombine;
 
@@ -19,7 +20,7 @@ public class BigFileSorter
     /// Сортирует строки в указаном файле.
     /// </summary>
     /// <returns>Путь к отсортированному файлу, кол-во паролей в исходном файле.</returns>
-    public async Task<(string Path, long AllPassCount)> Sort()
+    public async Task<(string Path, int AllPassCount)> Sort()
     {
         var (partsPaths, count) = await SplitFile();
         var path = await SortAndMargeFiles(partsPaths);
@@ -33,11 +34,13 @@ public class BigFileSorter
     /// Разбивает файл на куски, которые могут поместиться в памяти и сортирует их.
     /// </summary>
     /// <returns>Пути к отсортированным частям файла, кол-во паролей в файле.</returns>
-    public async Task<(List<string> PartsPaths, long AllPassCount)> SplitFile()
+    public async Task<(List<string> PartsPaths, int AllPassCount)> SplitFile()
     {
+        Console.WriteLine($"Spliting file {_inputFilePath} started.");
+
         List<string> partsPaths = new();
         List<Task> writeTasks = new();
-        long count = 0;
+        int count = 0;
         var input = File.ReadLines(_inputFilePath);
 
         foreach (var i in input.Chunk(_bufferSize))
@@ -57,6 +60,7 @@ public class BigFileSorter
 
         await Task.WhenAll(writeTasks);
 
+        Console.WriteLine($"Spliting file {_inputFilePath} with {count} total lines finished.");
         return (partsPaths, count);
     }
 
@@ -67,6 +71,8 @@ public class BigFileSorter
     /// <returns>Путь к файлу с результатом.</returns>
     public static async Task<string> SortAndMargeFiles(List<string> paths)
     {
+        WriteLine("=== Started merging parts into a sorted common file. ===");
+
         var resultPath = TempFilesPaths.Next();
         var readers = paths.Select(x => new StreamReader(x)).ToArray();
 
@@ -91,6 +97,8 @@ public class BigFileSorter
             foreach (var r in readers)
                 r.Dispose();
         }
+
+        WriteLine("=== Merging parts finished. ===");
 
         return resultPath;
     }

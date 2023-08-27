@@ -2,34 +2,32 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using static System.Console;
 
 namespace DictCombine;
 
 public class Aggregator
 {
-    /// <summary>
-    /// Текущая операция.
-    /// </summary>
-    public string OperationsStatus { get; private set; } // TODO: текущий статус выполения
-
-    private readonly Dictionary<string, int> _duplicates = new();
     private readonly int _bufferSize;
     private readonly IEnumerable<string> _inputFilesPaths;
     private readonly string _outputFilePath;
+    private long _totalPassCount = 0;
+    private int _totalDuplicatesCount = 0;
 
     public Aggregator(int bufferSize, IEnumerable<string> inputFilesPaths, string outputFilePath)
-    => (_bufferSize, _outputFilePath, _inputFilesPaths, OperationsStatus) = (bufferSize, outputFilePath, inputFilesPaths, "Wait for start");
-    
+        => (_bufferSize, _outputFilePath, _inputFilesPaths) = (bufferSize, outputFilePath, inputFilesPaths);
+
 
     /// <summary>
-    /// Собирает файлы из указанной дирректоррии в один
+    /// Собирает файлы из указанной дирректоррии в один.
     /// </summary>
-    /// <returns>Словарь со строками, которые встречались несколько раз и их количество</returns>
-    public async Task<Dictionary<string, int>> Aggregate()
+    /// <returns>Кортеж (кол-во найденных дубликатов, общее кол-во паролей до оптимизации)</returns>
+    public async Task<(long duplicatesCount, long passCount)> Aggregate()
     {
         var sortedFiles = await SortAllDictionary();
 
-        long passCount = sortedFiles.Select(x => x.AllPassCount).Aggregate((x, y) => x + y);
+        _totalPassCount = sortedFiles.Select(x => x.AllPassCount).Aggregate((x, y) => x + y);
+        WriteLine($"In total, there are {_totalPassCount} lines in the files (including possible duplicates).");
 
         List<string> partsPaths = new();
         foreach (var i in sortedFiles) partsPaths.AddRange(i.PartsPaths);
@@ -39,35 +37,38 @@ public class Aggregator
         Exterminator3000.DeleteFiles(partsPaths);
 
         await RemoveDuplicates(sortingResultPath);
-        
+
         Exterminator3000.DeleteFile(sortingResultPath);
-        
-        return _duplicates;
+
+        return (_totalDuplicatesCount, _totalPassCount);
     }
 
-    private async Task<List<(List<string> PartsPaths, long AllPassCount)>> SortAllDictionary()
+    private async Task<List<(List<string> PartsPaths, int AllPassCount)>> SortAllDictionary()
     {
+        WriteLine("=== Started splitting files into parts that fit in RAM and sorting these parts. ===");
+
         var sorters = _inputFilesPaths.Select(x => new BigFileSorter(x, _bufferSize));
-        var sortTasks = sorters.AsParallel().Select(x => x.SplitFile()).ToList();
-        
+        var sortTasks = sorters.Select(x => x.SplitFile()).ToList();
+
         // Список путей к файлам и колчество паролей в каждом исходном файле словаря
-        var sortedFiles = new List<(List<string> PartsPaths, long AllPassCount)>();
+        var sortedFiles = new List<(List<string> PartsPaths, int AllPassCount)>();
 
         while (sortTasks.Count > 0)
         {
-            await Task.WhenAny(sortTasks.ToArray());
-
-            var completed = sortTasks.Where(x => x.IsCompleted).ToArray();
-            foreach (var t in completed) sortTasks.Remove(t);
-
-            sortedFiles.AddRange(completed.Select(x => x.Result));
+            var c = await Task.WhenAny(sortTasks.ToArray());
+            sortTasks.Remove(c);
+            sortedFiles.Add(c.Result);
         }
 
+        WriteLine("=== Splitting files into parts is over. ===");
         return sortedFiles;
     }
 
     private async Task RemoveDuplicates(string path)
     {
+        WriteLine("=== Search for duplicates. ===");
+        long processedCount = 0;
+
         using var reader = new StreamReader(path);
         await using var writer = new StreamWriter(_outputFilePath);
         string? current = await reader.ReadLineAsync();
@@ -82,21 +83,19 @@ public class Aggregator
                 await writer.WriteLineAsync(current);
                 if (!reader.EndOfStream) current = newLine;
             }
-            else AddDuplicate(newLine);
+            else _totalDuplicatesCount++;
+
+            if (++processedCount % 1_000_000 == 0)
+                WriteLine(
+                    $"Processed {processedCount} files out of {_totalPassCount}. Duplicates found {_totalDuplicatesCount}.");
         }
 
         if (current != newLine) await writer.WriteLineAsync(newLine);
-        else AddDuplicate(newLine);
+        else _totalDuplicatesCount++;
 
         writer.Close();
         reader.Close();
-    }
 
-    private void AddDuplicate(string? item)
-    {
-        if (item is null) return;
-
-        if (_duplicates.ContainsKey(item)) _duplicates[item]++;
-        else _duplicates.Add(item, 1);
+        WriteLine("=== The search is over ===");
     }
 }

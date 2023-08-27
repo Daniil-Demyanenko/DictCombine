@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -40,10 +41,12 @@ static class Program
 
         Console.WriteLine($"Temp folder: {TempFilesPaths.TempDirPath}");
 
-        var res = await new Aggregator(bufferSize, inputFilesPaths, outputFilePath).Aggregate();
+        Stopwatch sw = new();
+        sw.Start();
+        var duplicateInfo = await new Aggregator(bufferSize, inputFilesPaths, outputFilePath).Aggregate();
 
-        foreach (var i in res.OrderBy(x => x.Value))
-            Console.WriteLine($"{i.Value} | {i.Key}");
+        sw.Stop();
+        Console.WriteLine($"Found {duplicateInfo.duplicatesCount} duplicates in {duplicateInfo.passCount} rows. \nTotal work time: {sw.Elapsed.TotalSeconds} seconds");
 
         Directory.Delete(TempFilesPaths.TempDirPath, recursive: true);
     }
